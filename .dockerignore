@@ -1,0 +1,17 @@
+.git
+.venv
+.env
+__pycache__
+*.pyc
+*.pyo
+.python-version
+storage/*
+!storage/.gitkeep
+tests/
+*.md
+SDD.md
+API.md
+DEPLOYMENT.md
+demo_test.py
+apply_migrations.py
+check_schema.py

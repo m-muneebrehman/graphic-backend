@@ -47,7 +47,7 @@ async def selfie_auth(
         )
 
     # Use the first (largest / most prominent) face
-    encoding = faces[0].encoding
+    encoding = faces[0].embedding
 
     # Search the database
     with get_db() as conn:

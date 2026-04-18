@@ -5,7 +5,8 @@
 Imagine a marathon with 500 runners and photographers taking 50,000 photos. Instead of manual tagging, **Grabpic** uses facial recognition to automatically group images by person and provides a secure **"Selfie-as-a-Key"** retrieval system.
 
 📄 **See [SDD.md](./SDD.md) for architecture, data models, and request flows.**  
-📡 **See [API.md](./API.md) for the full endpoint reference with request/response examples.**
+📡 **See [API.md](./API.md) for the full endpoint reference with request/response examples.**  
+🚀 **See [DEPLOYMENT.md](./DEPLOYMENT.md) for free hosting options (ngrok, Railway, Render, Fly.io).**
 
 ---
 
