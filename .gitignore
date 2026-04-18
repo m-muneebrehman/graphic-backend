@@ -8,3 +8,20 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Environment variables
+.env
+
+# Storage (large image files)
+storage/*
+!storage/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
