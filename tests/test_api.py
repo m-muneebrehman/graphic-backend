@@ -84,7 +84,7 @@ class TestAuthEndpoint:
 
         test_id = uuid.uuid4()
         mock_detect.return_value = [
-            FaceData(encoding=np.random.rand(128), bbox=(10, 100, 100, 10))
+            FaceData(embedding=np.random.rand(512).astype(np.float32), bbox=(10, 10, 100, 100))
         ]
         mock_conn = MagicMock()
         mock_db.return_value.__enter__ = MagicMock(return_value=mock_conn)
@@ -124,7 +124,7 @@ class TestAuthEndpoint:
         from app.services.face_service import FaceData
 
         mock_detect.return_value = [
-            FaceData(encoding=np.random.rand(128), bbox=(10, 100, 100, 10))
+            FaceData(embedding=np.random.rand(512).astype(np.float32), bbox=(10, 10, 100, 100))
         ]
         mock_conn = MagicMock()
         mock_db.return_value.__enter__ = MagicMock(return_value=mock_conn)

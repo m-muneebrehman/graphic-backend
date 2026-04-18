@@ -4,45 +4,31 @@
 
 Imagine a marathon with 500 runners and photographers taking 50,000 photos. Instead of manual tagging, **Grabpic** uses facial recognition to automatically group images by person and provides a secure **"Selfie-as-a-Key"** retrieval system.
 
+📄 **See [SDD.md](./SDD.md) for architecture, data models, and request flows.**  
+📡 **See [API.md](./API.md) for the full endpoint reference with request/response examples.**
+
 ---
 
-## Architecture
-
-```
-┌────────────┐     ┌───────────────┐     ┌─────────────────────┐
-│  ./storage │────▶│  Ingestion    │────▶│  PostgreSQL + pgvec │
-│  (images)  │     │  Pipeline     │     │                     │
-└────────────┘     │  • crawl      │     │  faces (128-d vec)  │
-                   │  • detect     │     │  images             │
-                   │  • encode     │     │  image_faces (M:N)  │
-                   └───────────────┘     └──────────┬──────────┘
-                                                    │
-                   ┌───────────────┐                │
-                   │  Selfie Auth  │◀───────────────┘
-                   │  POST /selfie │     cosine similarity
-                   │  → grab_id    │     search via HNSW
-                   └───────────────┘
-```
-
-## Tech Stack
+## ⚡ Tech Stack
 
 | Layer | Technology |
 |-------|------------|
 | Framework | FastAPI + Uvicorn |
-| Face Recognition | `face_recognition` (dlib, 128-d embeddings) |
+| Face Recognition | InsightFace `buffalo_l` (512-d ArcFace embeddings) |
 | Image Processing | OpenCV, Pillow |
-| Database | PostgreSQL + `pgvector` (Supabase) |
+| Database | PostgreSQL + `pgvector` (Supabase recommended) |
 | Testing | pytest |
 | Docs | Swagger UI (auto at `/docs`) |
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) package manager
-- PostgreSQL with `pgvector` extension (Supabase recommended)
-- CMake + dlib build dependencies (for `face-recognition`)
+- PostgreSQL with `pgvector` extension (Supabase has this enabled by default)
+
+> **Note:** InsightFace uses ONNX Runtime for CPU inference — no CMake, no dlib compilation required. The model weights (~300 MB for `buffalo_l`) are downloaded automatically on first run to `~/.insightface/models/`.
 
 ### Setup
 
@@ -51,8 +37,7 @@ Imagine a marathon with 500 runners and photographers taking 50,000 photos. Inst
 uv sync
 
 # 2. Configure environment
-cp .env.example .env
-# Edit .env with your database URL
+cp .env .env.local   # or edit .env directly with your credentials
 
 # 3. Place images in the storage directory
 cp your-event-photos/* ./storage/
@@ -68,9 +53,18 @@ uv run uvicorn main:app --reload --port 8000
 | `DATABASE_URL` | — | PostgreSQL connection string |
 | `IMAGE_STORAGE_PATH` | `./storage` | Directory containing event images |
 | `PORT` | `8000` | Server port |
-| `FACE_MATCH_TOLERANCE` | `0.45` | Cosine similarity threshold (0-1) |
+| `FACE_MODEL` | `buffalo_l` | InsightFace model pack (`buffalo_l` = high accuracy, `buffalo_s` = faster) |
+| `FACE_MATCH_TOLERANCE` | `0.45` | Cosine similarity threshold (0–1). See table below. |
 
-## API Reference
+#### Threshold Guide for InsightFace `buffalo_l`
+
+| `FACE_MATCH_TOLERANCE` | Use Case |
+|---|---|
+| `0.45` | Permissive — demos, small events (default) |
+| `0.60` | Balanced — medium-sized events |
+| `0.70` | Strict — high-security or large crowds |
+
+## 📡 API Reference
 
 ### Health Check
 ```bash
@@ -81,107 +75,73 @@ GET /health
 ### Ingest Images
 ```bash
 POST /api/v1/ingest
-# Crawl storage directory, detect faces, create grab_ids
-
-curl -X POST http://localhost:8000/api/v1/ingest
-
-# Response:
-# {
-#   "images_processed": 150,
-#   "images_skipped": 0,
-#   "faces_detected": 420,
-#   "new_faces_created": 85,
-#   "errors": []
-# }
 ```
+Crawls the configured `IMAGE_STORAGE_PATH` directory, detects faces using InsightFace, indexes 512-d ArcFace embeddings, and creates unique `grab_id` mappings.
+- **Returns:** JSON object summarizing processed files, duplicates skipped, and errors.
 
 ### Selfie Authentication
 ```bash
 POST /api/v1/auth/selfie
 Content-Type: multipart/form-data
-
-curl -X POST -F "file=@my-selfie.jpg" http://localhost:8000/api/v1/auth/selfie
-
-# Response:
-# {
-#   "matched": true,
-#   "grab_id": "a1b2c3d4-...",
-#   "confidence": 0.9234,
-#   "message": "Identity verified successfully."
-# }
 ```
+Upload a selfie image containing a single face to be cross-matched against the database.
+- **Returns:** A JSON object containing the matched `grab_id` and confidence score.
 
 ### Retrieve Images
 ```bash
 GET /api/v1/images/{grab_id}?page=1&per_page=20
-
-curl http://localhost:8000/api/v1/images/a1b2c3d4-...
-
-# Response:
-# {
-#   "grab_id": "a1b2c3d4-...",
-#   "page": 1,
-#   "per_page": 20,
-#   "total": 12,
-#   "images": [...]
-# }
 ```
+Fetch paginated event images known to contain the requested user.
+- **Returns:** JSON with image list and bounding boxes indicating where the user appears.
 
 ### Interactive Docs
 
-Visit **http://localhost:8000/docs** for the full Swagger UI.
+Visit **http://localhost:8000/docs** or **http://localhost:8000/redoc** while running locally for the full interactive Swagger UI.
 
-## Database Schema
+## 🗃️ Database Migrations
 
-```
-faces (grab_id UUID PK, embedding vector(128), created_at)
-  │
-  ├──< image_faces (image_id FK, grab_id FK, bbox, confidence)
-  │
-images (image_id UUID PK, file_path, file_name, metadata, ingested_at)
-```
+Migrations run **automatically on startup**. SQL files in `migrations/` are applied in order:
 
-- **faces**: One row per unique person discovered
-- **images**: One row per ingested image file
-- **image_faces**: Many-to-many junction (one image → many faces)
+| File | Description |
+|---|---|
+| `001_init.sql` | Creates tables, enables pgvector, adds HNSW index |
+| `002_resize_embedding.sql` | Resizes embedding column `vector(128)` → `vector(512)` for InsightFace |
 
-## Testing
+> **⚠️ Upgrading from dlib/face_recognition?** Run `002_resize_embedding.sql` against your database and re-ingest all images — old 128-d embeddings are incompatible with InsightFace 512-d embeddings.
+
+## 🧪 Testing
 
 ```bash
 # Run all tests
 uv run pytest tests/ -v
 
-# Run specific test file
-uv run pytest tests/test_face_service.py -v
-
 # Run with coverage
 uv run pytest tests/ --cov=app -v
 ```
 
-## Project Structure
+## 📂 Project Structure
 
 ```
 graphic-backend/
 ├── app/
-│   ├── config.py              # Settings from .env
-│   ├── database.py            # Connection pool & migrations
-│   ├── models.py              # Pydantic schemas
+│   ├── config.py              # Settings loaded from .env (FACE_MODEL, tolerances, etc.)
+│   ├── database.py            # Connection pool + auto-migration runner
+│   ├── models.py              # Pydantic schemas for API request/response
 │   ├── services/
-│   │   ├── face_service.py    # Detection, encoding, matching
-│   │   └── ingestion_service.py  # Storage crawler + indexer
+│   │   ├── face_service.py    # InsightFace detection, 512-d ArcFace encoding, vector matching
+│   │   └── ingestion_service.py # Storage crawler + relational indexing
 │   └── routes/
 │       ├── ingest.py          # POST /api/v1/ingest
 │       ├── auth.py            # POST /api/v1/auth/selfie
 │       └── images.py          # GET /api/v1/images/{grab_id}
 ├── migrations/
-│   └── 001_init.sql           # Schema DDL
+│   ├── 001_init.sql           # Schema, pgvector, HNSW index
+│   └── 002_resize_embedding.sql  # 128-d → 512-d embedding resize
 ├── tests/
-│   ├── test_face_service.py
-│   ├── test_ingest.py
-│   └── test_api.py
-├── storage/                   # Event images
-├── main.py                    # App entrypoint
-└── .env
+├── storage/                   # Default image mount point
+├── SDD.md                     # Software Design Document
+├── main.py                    # FastAPI app entrypoint
+└── .env                       # Local environment secrets
 ```
 
 ## License

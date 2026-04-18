@@ -1,8 +1,14 @@
 """
 Storage crawler and image ingestion pipeline.
 
-Walks the configured storage directory, detects faces in every image,
-and persists the image→face mappings to the database.
+Walks the configured storage directory, detects faces in every image
+using InsightFace, and persists the image→face mappings to the database.
+
+Bounding-box convention (InsightFace)
+-------------------------------------
+``FaceData.bbox`` is ``(x1, y1, x2, y2)`` — top-left → bottom-right in
+pixel coordinates.  Stored in the DB as
+``(bbox_x=x1, bbox_y=y1, bbox_w=x2-x1, bbox_h=y2-y1)``.
 """
 
 from __future__ import annotations
@@ -14,7 +20,7 @@ from pathlib import Path
 from PIL import Image
 
 from app.config import settings
-from app.services.face_service import detect_faces, find_or_create_face
+from app.services.face_service import FaceData, detect_faces, find_or_create_face
 
 
 # ---------------------------------------------------------------------------
@@ -120,19 +126,19 @@ def ingest_image(image_path: Path, conn) -> tuple[bool, int, int]:
 
     with conn.cursor() as cur:
         for face_data in faces:
-            grab_id, is_new = find_or_create_face(face_data.encoding, conn)
+            grab_id, is_new = find_or_create_face(face_data.embedding, conn)
             if is_new:
                 new_faces += 1
 
-            # dlib bbox is (top, right, bottom, left)
-            top, right, bottom, left = face_data.bbox
+            # InsightFace bbox is (x1, y1, x2, y2) — top-left → bottom-right
+            x1, y1, x2, y2 = face_data.bbox
             cur.execute(
                 """
                 INSERT INTO image_faces (image_id, grab_id, bbox_x, bbox_y, bbox_w, bbox_h)
                 VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (image_id, grab_id) DO NOTHING
                 """,
-                (image_id, grab_id, left, top, right - left, bottom - top),
+                (image_id, grab_id, x1, y1, x2 - x1, y2 - y1),
             )
 
     return True, faces_detected, new_faces
